@@ -1,3 +1,4 @@
-python bot.py
+py-cord
+flask
 # تشغيل البوت بأمان باستخدام متغيرات البيئة (Environment Variables)
 bot.run(os.getenv("TOKEN"))
