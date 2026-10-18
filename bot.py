@@ -1,4 +1,3 @@
-import os
 import discord
 from discord.ext import commands
 
@@ -8,34 +7,23 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 SUBMISSION_LOG_CHANNEL_ID = 1551665491884638278
 
-class ApplyModal(discord.ui.Modal):
-    def __init__(self, title_name: str, questions: list):
-        super().__init__(title=title_name)
-        self.questions = questions
-        self.user_answers = {}
+class ReasonModal(discord.ui.Modal):
+    def __init__(self, applicant_id: int, form_type: str, accepted: bool):
+        super().__init__(title="سبب القبول أو الرفض")
+        self.applicant_id = applicant_id
+        self.form_type = form_type
+        self.accepted = accepted
 
-        for i, q in enumerate(questions):
-            self.user_answers[f"q_{i}"] = discord.ui.inputText(
-                label=q[:45], 
-                style=discord.TextStyle.short, 
-                required=True
-            )
-            self.add_item(self.user_answers[f"q_{i}"])
+        self.reason = discord.ui.TextInput(
+            label="السبب / الملاحظات:",
+            style=discord.TextStyle.paragraph,
+            required=True
+        )
+        self.add_item(self.reason)
 
     async def on_submit(self, interaction: discord.Interaction):
-        embed = discord.Embed(title=f"📋 تقديم جديد: {self.title}", color=discord.Color.blue())
-        embed.set_author(name=interaction.user.name, icon_url=interaction.user.display_avatar.url)
-        
-        for i, q in enumerate(self.questions):
-            embed.add_field(name=q, value=self.user_answers[f"q_{i}"].value, inline=False)
-            
-        view = ReviewActionView(interaction.user.id, self.title)
-        
-        channel = bot.get_channel(SUBMISSION_LOG_CHANNEL_ID)
-        if channel:
-            await channel.send(embed=embed, view=view)
-            
-        await interaction.response.send_message("✅ تم إرسال تقديمك بنجاح للمراجعة!", ephemeral=True)
+        status_text = "تم قبوله ✅" if self.accepted else "تم رفضه ❌"
+        await interaction.response.send_message(f"✅ تم تسجيل القرار ({status_text}) بنجاح.", ephemeral=True)
 
 class ReviewActionView(discord.ui.View):
     def __init__(self, applicant_id: int, form_type: str):
@@ -51,42 +39,35 @@ class ReviewActionView(discord.ui.View):
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ReasonModal(self.applicant_id, self.form_type, False))
 
-class ReasonModal(discord.ui.Modal):
-    def __init__(self, applicant_id: int, form_type: str, is_accepted: bool):
-        super().__init__(title="سبب القبول / الرفض")
-        self.applicant_id = applicant_id
-        self.form_type = form_type
-        self.is_accepted = is_accepted
+class ApplyModal(discord.ui.Modal):
+    def __init__(self, title_name: str, questions: list):
+        super().__init__(title=title_name)
+        self.questions = questions
+        self.user_answers = {}
 
-        self.reason_input = discord.ui.inputText(
-            label="السبب", 
-            style=discord.TextStyle.long, 
-            placeholder="اكتب السبب هنا...", 
-            required=True
-        )
-        self.add_item(self.reason_input)
+        for i, q in enumerate(questions):
+            text_input = discord.ui.TextInput(
+                label=q[:45], 
+                style=discord.TextStyle.short, 
+                required=True
+            )
+            self.user_answers[f"q_{i}"] = text_input
+            self.add_item(text_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        reason = self.reason_input.value
-        applicant = interaction.guild.get_member(self.applicant_id)
+        embed = discord.Embed(title=f"📋 تقديم جديد: {self.title}", color=discord.Color.blue())
+        embed.set_author(name=interaction.user.name, icon_url=interaction.user.display_avatar.url)
         
-        status_text = "تم قبولك 🎉" if self.is_accepted else "تم رفضك ❌"
-        color = discord.Color.green() if self.is_accepted else discord.Color.red()
+        for i, q in enumerate(self.questions):
+            embed.add_field(name=q, value=self.user_answers[f"q_{i}"].value, inline=False)
+            
+        view = ReviewActionView(interaction.user.id, self.title)
         
-        embed = discord.Embed(title=f"نتيجة التقديم على ({self.form_type})", description=status_text, color=color)
-        embed.add_field(name="السبب", value=reason, inline=False)
-        
-        if applicant:
-            try:
-                await applicant.send(embed=embed)
-            except:
-                pass
-                
-        new_embed = interaction.message.embeds[0]
-        new_embed.add_field(name="الحالة", value=f"{status_text} بواسطة {interaction.user.mention}\n**السبب:** {reason}", inline=False)
-        await interaction.message.edit(embed=new_embed, view=None)
-        
-        await interaction.response.send_message("✅ تم إرسال الرد بنجاح!", ephemeral=True)
+        channel = bot.get_channel(SUBMISSION_LOG_CHANNEL_ID)
+        if channel:
+            await channel.send(embed=embed, view=view)
+            
+        await interaction.response.send_message("✅ تم إرسال تقديمك بنجاح للمراجعة!", ephemeral=True)
 
 class ApplySelectView(discord.ui.View):
     def __init__(self):
@@ -134,6 +115,7 @@ class TicketView(discord.ui.View):
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         category_name = "🎯 | ====== Main ====== | 🎯"
+        
         category = discord.utils.get(guild.categories, name=category_name)
         
         if not category:
@@ -160,12 +142,9 @@ async def send_apply_panel(ctx):
     embed = discord.Embed(title="تقديمات الإدارة والمسارات", description="اضغط على الزر بالأسفل للتقديم في المسار المناسب لك.\n*(معك الوقت المحدد لكل اختبار، وممنوع وسائل المساعدة)*", color=discord.Color.dark_embed())
     await ctx.send(embed=embed, view=view)
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def send_ticket_panel(ctx):
-    view = TicketView()
-    embed = discord.Embed(title="نظام التذاكر", description="اضغط على الزر أدناه لفتح تذكرة جديدة والتواصل مع الإدارة.", color=discord.Color.green())
-    await ctx.send(embed=embed, view=view)
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
-# تشغيل البوت بأمان باستخدام متغيرات البيئة (Environment Variables)
-bot.run(os.getenv("TOKEN"))
+# ضع التوكن الخاص بك هنا
+bot.run("MTU1NTQ1NjIwNzMyMDI1NjU2Mw.Gs5cTX.9z7iU4y4dDb4gXsyEmbSc5GtVUkEM3ed5RRDCY")
